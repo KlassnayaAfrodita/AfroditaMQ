@@ -1,41 +1,105 @@
 package broker
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+	"time"
+)
+
+type Message struct {
+	Content    string
+	Priority   int
+	Expiration time.Time
+}
 
 type Broker interface {
-	SendQueue(clientID string, message string) error
-	ReceiveQueue(clientID string) (string, error)
-	Publish(topic string, message string) error
+	Publish(topic string, message Message) error
 	Subscribe(clientID string, topic string) error
+	Unsubscribe(clientID string, topic string) error
+	CreateTopic(topic string) error
+	DeleteTopic(topic string) error
 	ReceiveFromTopic(clientID string) (string, error)
+	CleanUpExpiredMessages()
 }
 
 type SimpleBroker struct {
-	queues  map[string][]string
-	topics  map[string][]string
+	topics  map[string][]Message
 	clients map[string][]string
 }
 
 func NewBroker() *SimpleBroker {
 	return &SimpleBroker{
-		queues:  make(map[string][]string),
-		topics:  make(map[string][]string),
+		topics:  make(map[string][]Message),
 		clients: make(map[string][]string),
 	}
 }
 
-func (b *SimpleBroker) SendQueue(clientID string, message string) error {
-	b.queues[clientID] = append(b.queues[clientID], message)
-	fmt.Printf("Message sent to queue %s: %s\n", clientID, message)
+func (b *SimpleBroker) Publish(topic string, message Message) error {
+	b.CleanUpExpiredMessages()
+
+	if _, exists := b.topics[topic]; !exists {
+		return fmt.Errorf("topic %s does not exist", topic)
+	}
+	b.topics[topic] = append(b.topics[topic], message)
+
+	// Сортируем сообщения по приоритету
+	sort.SliceStable(b.topics[topic], func(i, j int) bool {
+		return b.topics[topic][i].Priority > b.topics[topic][j].Priority
+	})
+
 	return nil
 }
 
-func (b *SimpleBroker) ReceiveQueue(clientID string) (string, error) {
-	queue := b.queues[clientID]
-	if len(queue) == 0 {
-		return "", fmt.Errorf("no messages")
+func (b *SimpleBroker) Subscribe(clientID string, topic string) error {
+	b.clients[clientID] = append(b.clients[clientID], topic)
+	return nil
+}
+
+func (b *SimpleBroker) Unsubscribe(clientID string, topic string) error {
+	topics := b.clients[clientID]
+	for i, t := range topics {
+		if t == topic {
+			b.clients[clientID] = append(topics[:i], topics[i+1:]...)
+			return nil
+		}
 	}
-	message := queue[0]
-	b.queues[clientID] = queue[1:]
-	return message, nil
+	return fmt.Errorf("client %s not subscribed to topic %s", clientID, topic)
+}
+
+func (b *SimpleBroker) CreateTopic(topic string) error {
+	if _, exists := b.topics[topic]; exists {
+		return fmt.Errorf("topic %s already exists", topic)
+	}
+	b.topics[topic] = []Message{}
+	return nil
+}
+
+func (b *SimpleBroker) DeleteTopic(topic string) error {
+	delete(b.topics, topic)
+	return nil
+}
+
+func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
+	topics := b.clients[clientID]
+	for _, topic := range topics {
+		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
+			message := messages[0]
+			b.topics[topic] = messages[1:]
+			return message.Content, nil
+		}
+	}
+	return "", fmt.Errorf("no messages for client %s", clientID)
+}
+
+func (b *SimpleBroker) CleanUpExpiredMessages() {
+	now := time.Now()
+	for topic, messages := range b.topics {
+		filtered := []Message{}
+		for _, msg := range messages {
+			if msg.Expiration.After(now) {
+				filtered = append(filtered, msg)
+			}
+		}
+		b.topics[topic] = filtered
+	}
 }

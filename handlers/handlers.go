@@ -5,23 +5,64 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 )
 
-type PublishRequest struct {
-	Topic   string `json:"topic"`
-	Message string `json:"message"`
+type CreateTopicRequest struct {
+	Topic string `json:"topic"`
 }
 
-type SubscribeRequest struct {
+type UnsubscribeRequest struct {
 	ClientID string `json:"client_id"`
 	Topic    string `json:"topic"`
 }
 
-type ReceiveRequest struct {
-	ClientID string `json:"client_id"`
+type PublishRequest struct {
+	Topic    string `json:"topic"`
+	Message  string `json:"message"`
+	Priority int    `json:"priority"`
+	TTL      int64  `json:"ttl"` // TTL в секундах
 }
 
-// Обработчик публикации сообщения
+// Создание топика
+func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req CreateTopicRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if err := b.CreateTopic(req.Topic); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "Topic created successfully")
+	}
+}
+
+// Отписка от топика
+func UnsubscribeHandler(b broker.Broker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req UnsubscribeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if err := b.Unsubscribe(req.ClientID, req.Topic); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "Unsubscribed successfully")
+	}
+}
+
+// Публикация сообщения с приоритетом и TTL
 func PublishHandler(b broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req PublishRequest
@@ -30,51 +71,19 @@ func PublishHandler(b broker.Broker) http.HandlerFunc {
 			return
 		}
 
-		if err := b.Publish(req.Topic, req.Message); err != nil {
-			http.Error(w, "Failed to publish message", http.StatusInternalServerError)
+		expiration := time.Now().Add(time.Duration(req.TTL) * time.Second)
+		message := broker.Message{
+			Content:    req.Message,
+			Priority:   req.Priority,
+			Expiration: expiration,
+		}
+
+		if err := b.Publish(req.Topic, message); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "Message published successfully")
-	}
-}
-
-// Обработчик подписки на топик
-func SubscribeHandler(b broker.Broker) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req SubscribeRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request", http.StatusBadRequest)
-			return
-		}
-
-		if err := b.Subscribe(req.ClientID, req.Topic); err != nil {
-			http.Error(w, "Failed to subscribe", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "Subscribed successfully")
-	}
-}
-
-// Обработчик получения сообщения
-func ReceiveHandler(b broker.Broker) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req ReceiveRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request", http.StatusBadRequest)
-			return
-		}
-
-		message, err := b.ReceiveFromTopic(req.ClientID)
-		if err != nil {
-			http.Error(w, "Failed to receive message", http.StatusNoContent)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, message)
 	}
 }

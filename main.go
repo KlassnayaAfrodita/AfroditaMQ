@@ -2,26 +2,26 @@ package main
 
 import (
 	"MessageBroker/broker"
-	"MessageBroker/client"
+	"MessageBroker/handlers"
+	"fmt"
+	"log"
+	"net/http"
 )
 
 func main() {
-	b := broker.NewBroker()
+	// Инициализируем брокер
+	broker := broker.NewBroker()
 
-	// Создаем издателя и подписчиков
-	publisher := client.NewPublisher("publisher", b)
-	subscriber1 := client.NewSubscriber("subscriber1", b, "tech")
-	subscriber2 := client.NewSubscriber("subscriber2", b, "sports")
+	// Инициализируем обработчики
+	http.HandleFunc("/subscribe", handlers.SubscribeHandler(broker))
+	http.HandleFunc("/unsubscribe", handlers.UnsubscribeHandler(broker))
+	http.HandleFunc("/create-topic", handlers.CreateTopicHandler(broker))
+	http.HandleFunc("/publish", handlers.PublishHandler(broker))
 
-	// Подписчики подписываются на топики
-	subscriber1.Subscribe("tech")
-	subscriber2.Subscribe("sports")
-
-	// Издатель публикует сообщения
-	publisher.Publish("tech", "New Go version released!")
-	publisher.Publish("sports", "Local team wins championship!")
-
-	// Подписчики получают сообщения
-	subscriber1.ReceiveMessage()
-	subscriber2.ReceiveMessage()
+	// Запускаем сервер на порту 8080
+	fmt.Println("Starting server on port 8080...")
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal("Error starting server: ", err)
+	}
 }

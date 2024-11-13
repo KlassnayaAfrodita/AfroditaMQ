@@ -40,6 +40,8 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 	if _, exists := b.topics[topic]; !exists {
 		return fmt.Errorf("topic %s does not exist", topic)
 	}
+
+	// Добавляем сообщение в очередь для топика
 	b.topics[topic] = append(b.topics[topic], message)
 
 	// Сортируем сообщения по приоритету
@@ -83,8 +85,11 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 	topics := b.clients[clientID]
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
+			// Получаем первое сообщение из очереди
 			message := messages[0]
+			// Убираем сообщение из очереди
 			b.topics[topic] = messages[1:]
+			// Возвращаем контент сообщения
 			return message.Content, nil
 		}
 	}
@@ -94,6 +99,7 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 func (b *SimpleBroker) CleanUpExpiredMessages() {
 	now := time.Now()
 	for topic, messages := range b.topics {
+		// Очищаем устаревшие сообщения
 		filtered := []Message{}
 		for _, msg := range messages {
 			if msg.Expiration.After(now) {

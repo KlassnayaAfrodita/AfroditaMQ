@@ -17,6 +17,11 @@ type UnsubscribeRequest struct {
 	Topic    string `json:"topic"`
 }
 
+type SubscribeRequest struct {
+	ClientID string `json:"client_id"`
+	Topic    string `json:"topic"`
+}
+
 type PublishRequest struct {
 	Topic    string `json:"topic"`
 	Message  string `json:"message"`
@@ -24,7 +29,7 @@ type PublishRequest struct {
 	TTL      int64  `json:"ttl"` // TTL в секундах
 }
 
-// Создание топика
+// CreateTopicHandler создает новый топик
 func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateTopicRequest
@@ -43,7 +48,7 @@ func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
 	}
 }
 
-// Отписка от топика
+// UnsubscribeHandler отписывает клиента от топика
 func UnsubscribeHandler(b broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req UnsubscribeRequest
@@ -62,7 +67,7 @@ func UnsubscribeHandler(b broker.Broker) http.HandlerFunc {
 	}
 }
 
-// Публикация сообщения с приоритетом и TTL
+// PublishHandler публикует сообщение с приоритетом и TTL
 func PublishHandler(b broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req PublishRequest
@@ -85,5 +90,25 @@ func PublishHandler(b broker.Broker) http.HandlerFunc {
 
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "Message published successfully")
+	}
+}
+
+func SubscribeHandler(b broker.Broker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req SubscribeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		// Выполнение подписки
+		if err := b.Subscribe(req.ClientID, req.Topic); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// Ответ, если подписка прошла успешно
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "Subscribed successfully")
 	}
 }

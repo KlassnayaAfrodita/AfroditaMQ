@@ -1,6 +1,7 @@
 package client
 
 import (
+	"MessageBroker/broker"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -196,38 +197,38 @@ func TestReceiveMessageBeforeTTLExpires(t *testing.T) {
 }
 
 // Тест на получение сообщения после истечения TTL
-// func TestReceiveMessageAfterTTLExpires(t *testing.T) {
-// 	// Создаем брокер
-// 	b := broker.NewBroker()
+func TestReceiveMessageAfterTTLExpires(t *testing.T) {
+	// Создаем брокер
+	b := broker.NewBroker()
 
-// 	// Создаем топик
-// 	topic := "news"
-// 	err := b.CreateTopic(topic)
-// 	assert.Nil(t, err, "Ошибка при создании топика")
+	// Создаем топик
+	topic := "news"
+	err := b.CreateTopic(topic)
+	assert.Nil(t, err, "Ошибка при создании топика")
 
-// 	// Создаем сообщение с TTL 1 секунда
-// 	message := broker.Message{
-// 		Content:    "Breaking news",
-// 		Priority:   1,
-// 		Expiration: time.Now().Add(1 * time.Second), // TTL - 1 секунда
-// 	}
+	// Создаем сообщение с TTL 1 секунда
+	message := broker.Message{
+		Content:    "Breaking news",
+		Priority:   1,
+		Expiration: time.Now().Add(1 * time.Second), // TTL - 1 секунда
+	}
 
-// 	// Публикуем сообщение
-// 	err = b.Publish(topic, message)
-// 	assert.Nil(t, err, "Ошибка при публикации сообщения")
+	// Публикуем сообщение
+	err = b.Publish(topic, message)
+	assert.Nil(t, err, "Ошибка при публикации сообщения")
 
-// 	// Подписываемся на топик
-// 	clientID := "client1"
-// 	err = b.Subscribe(clientID, topic)
-// 	assert.Nil(t, err, "Ошибка при подписке на топик")
+	// Подписываемся на топик
+	clientID := "client1"
+	err = b.Subscribe(clientID, topic)
+	assert.Nil(t, err, "Ошибка при подписке на топик")
 
-// 	// Ожидаем 2 секунды, чтобы TTL сообщения истек
-// 	time.Sleep(2 * time.Second)
+	// Ожидаем 2 секунды, чтобы TTL сообщения истек
+	time.Sleep(2 * time.Second)
 
-// 	// Пытаемся получить сообщение после истечения TTL
-// 	respMessage, err := b.ReceiveFromTopic(clientID)
+	// Пытаемся получить сообщение после истечения TTL
+	respMessage, err := b.ReceiveFromTopic(clientID)
 
-// 	// Проверяем, что ошибка возникла, так как сообщение истекло
-// 	assert.NotNil(t, err, "Ошибка не была получена после истечения TTL")
-// 	assert.Equal(t, "", respMessage, "Сообщение не должно быть получено после истечения TTL")
-// }
+	// Проверяем, что ошибка возникла, так как сообщение истекло
+	assert.NotNil(t, err, "Ошибка не была получена после истечения TTL")
+	assert.Equal(t, "", respMessage, "Сообщение не должно быть получено после истечения TTL")
+}

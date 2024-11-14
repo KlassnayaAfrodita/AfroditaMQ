@@ -84,13 +84,25 @@ func (b *SimpleBroker) DeleteTopic(topic string) error {
 func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 	topics := b.clients[clientID]
 	for _, topic := range topics {
-		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
-			// Получаем первое сообщение из очереди
-			message := messages[0]
-			// Убираем сообщение из очереди
-			b.topics[topic] = messages[1:]
-			// Возвращаем контент сообщения
-			return message.Content, nil
+		if messages, exists := b.topics[topic]; exists {
+			for len(messages) > 0 {
+				// Получаем первое сообщение из очереди
+				message := messages[0]
+
+				// Проверяем, истек ли TTL сообщения
+				if message.Expiration.Before(time.Now()) {
+					// Удаляем сообщение из очереди, если TTL истек
+					messages = messages[1:]
+					b.topics[topic] = messages // Обновляем очередь топика
+
+					// Продолжаем проверку следующего сообщения в очереди
+					continue
+				}
+
+				// Если TTL не истек, удаляем сообщение из очереди и возвращаем его
+				b.topics[topic] = messages[1:]
+				return message.Content, nil
+			}
 		}
 	}
 	return "", fmt.Errorf("no messages for client %s", clientID)

@@ -58,8 +58,9 @@ type SimpleBroker struct {
 	clients        map[string][]string
 	messageHeap    MinHeap
 	publishChan    chan Message
-	mu             sync.Mutex
-	unacknowledged map[string]*Message // Карта для отслеживания неподтвержденных сообщений
+	mu             sync.RWMutex
+	unacknowledged map[string]*Message
+	stopChan       chan struct{}
 }
 
 // NewBroker создает новый брокер
@@ -70,6 +71,7 @@ func NewBroker() *SimpleBroker {
 		messageHeap:    MinHeap{},
 		publishChan:    make(chan Message, 100),
 		unacknowledged: make(map[string]*Message),
+		stopChan:       make(chan struct{}),
 	}
 	heap.Init(&b.messageHeap)
 	go b.handlePublications()
@@ -127,7 +129,6 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 		return fmt.Errorf("topic %s does not exist", topic)
 	}
 
-	// Добавляем сообщение в очередь топика
 	msg := &Message{
 		Content:    message.Content,
 		Priority:   message.Priority,
@@ -135,22 +136,24 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 		Topic:      topic,
 	}
 	b.topics[topic] = append(b.topics[topic], msg)
-
-	// Добавляем сообщение в Min-Heap
 	heap.Push(&b.messageHeap, msg)
-
 	return nil
 }
 
-// AsyncPublish отправляет сообщение через канал для асинхронной обработки
+// AsyncPublish отправляет сообщение через канал
 func (b *SimpleBroker) AsyncPublish(topic string, message Message) {
 	b.publishChan <- message
 }
 
-// handlePublications обрабатывает публикации из канала
+// handlePublications обрабатывает публикации
 func (b *SimpleBroker) handlePublications() {
-	for msg := range b.publishChan {
-		_ = b.Publish(msg.Topic, msg)
+	for {
+		select {
+		case msg := <-b.publishChan:
+			_ = b.Publish(msg.Topic, msg)
+		case <-b.stopChan:
+			return
+		}
 	}
 }
 
@@ -167,45 +170,47 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
 			msg := messages[0]
-			b.topics[topic] = messages[1:]   // Убираем из очереди
-			b.unacknowledged[clientID] = msg // Добавляем в неподтвержденные
+			b.topics[topic] = messages[1:]
+			b.unacknowledged[clientID] = msg
 			return msg.Content, nil
 		}
 	}
 	return "", fmt.Errorf("no messages for client %s", clientID)
 }
 
-// AcknowledgeMessage подтверждает получение сообщения клиентом
+// AcknowledgeMessage подтверждает получение сообщения
 func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if msg, exists := b.unacknowledged[clientID]; exists {
-		delete(b.unacknowledged, clientID) // Убираем из неподтвержденных
+		delete(b.unacknowledged, clientID)
 		fmt.Printf("Message '%s' acknowledged by client '%s'\n", msg.Content, clientID)
 		return nil
 	}
 	return fmt.Errorf("no unacknowledged message for client %s", clientID)
 }
 
-// startCleanUpWorker запускает фоновую очистку истекших сообщений
+// startCleanUpWorker запускает очистку
 func (b *SimpleBroker) CleanUpExpiredMessages() {
-	go func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
+	for {
+		select {
+		case <-time.After(100 * time.Millisecond):
 			b.mu.Lock()
 			now := time.Now()
 			for b.messageHeap.Len() > 0 {
 				msg := b.messageHeap[0]
 				if msg.Expiration.After(now) {
-					break // Остальные сообщения ещё актуальны
+					break
 				}
 				heap.Pop(&b.messageHeap)
 				b.removeMessageFromTopic(msg)
 			}
 			b.mu.Unlock()
+		case <-b.stopChan:
+			return
 		}
-	}()
+	}
 }
 
 // removeMessageFromTopic удаляет сообщение из топика
@@ -217,4 +222,9 @@ func (b *SimpleBroker) removeMessageFromTopic(msg *Message) {
 			return
 		}
 	}
+}
+
+// Stop завершает работу брокера
+func (b *SimpleBroker) Stop() {
+	close(b.stopChan)
 }

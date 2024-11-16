@@ -49,24 +49,27 @@ type Broker interface {
 	DeleteTopic(topic string) error
 	ReceiveFromTopic(clientID string) (string, error)
 	CleanUpExpiredMessages()
+	AcknowledgeMessage(clientID string) error
 }
 
 // SimpleBroker реализует интерфейс брокера
 type SimpleBroker struct {
-	topics      map[string][]*Message
-	clients     map[string][]string
-	messageHeap MinHeap
-	publishChan chan Message
-	mu          sync.Mutex
+	topics         map[string][]*Message
+	clients        map[string][]string
+	messageHeap    MinHeap
+	publishChan    chan Message
+	mu             sync.Mutex
+	unacknowledged map[string]*Message // Карта для отслеживания неподтвержденных сообщений
 }
 
 // NewBroker создает новый брокер
 func NewBroker() *SimpleBroker {
 	b := &SimpleBroker{
-		topics:      make(map[string][]*Message),
-		clients:     make(map[string][]string),
-		messageHeap: MinHeap{},
-		publishChan: make(chan Message, 100),
+		topics:         make(map[string][]*Message),
+		clients:        make(map[string][]string),
+		messageHeap:    MinHeap{},
+		publishChan:    make(chan Message, 100),
+		unacknowledged: make(map[string]*Message),
 	}
 	heap.Init(&b.messageHeap)
 	go b.handlePublications()
@@ -156,17 +159,33 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if _, hasUnack := b.unacknowledged[clientID]; hasUnack {
+		return "", fmt.Errorf("client %s has an unacknowledged message", clientID)
+	}
+
 	topics := b.clients[clientID]
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
-			// Получаем первое сообщение из очереди
 			msg := messages[0]
-			// Убираем сообщение из очереди
-			b.topics[topic] = messages[1:]
+			b.topics[topic] = messages[1:]   // Убираем из очереди
+			b.unacknowledged[clientID] = msg // Добавляем в неподтвержденные
 			return msg.Content, nil
 		}
 	}
 	return "", fmt.Errorf("no messages for client %s", clientID)
+}
+
+// AcknowledgeMessage подтверждает получение сообщения клиентом
+func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if msg, exists := b.unacknowledged[clientID]; exists {
+		delete(b.unacknowledged, clientID) // Убираем из неподтвержденных
+		fmt.Printf("Message '%s' acknowledged by client '%s'\n", msg.Content, clientID)
+		return nil
+	}
+	return fmt.Errorf("no unacknowledged message for client %s", clientID)
 }
 
 // startCleanUpWorker запускает фоновую очистку истекших сообщений

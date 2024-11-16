@@ -10,4 +10,5 @@ type Subscriber interface {
 	Subscribe(topic string) error
 	Unsubscribe(topic string) error
 	ReceiveMessage() (string, error)
+	AcknowledgeMessage() error
 }

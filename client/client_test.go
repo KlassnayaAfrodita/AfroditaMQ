@@ -15,6 +15,28 @@ import (
 func mockServer(responseCode int, responseBody string) *httptest.Server {
 	handler := http.NewServeMux()
 
+	handler.HandleFunc("/acknowledge", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Invalid method", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var request map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		clientID, ok := request["client_id"].(string)
+		if !ok || clientID != "test_client" {
+			http.Error(w, "Invalid client_id", http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"success"}`))
+	})
+
 	// Обработчик для публикации сообщений
 	handler.HandleFunc("/publish", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -231,4 +253,42 @@ func TestReceiveMessageAfterTTLExpires(t *testing.T) {
 	// Проверяем, что ошибка возникла, так как сообщение истекло
 	assert.NotNil(t, err, "Ошибка не была получена после истечения TTL")
 	assert.Equal(t, "", respMessage, "Сообщение не должно быть получено после истечения TTL")
+}
+
+func TestAcknowledgeMessage(t *testing.T) {
+	server := mockServer(http.StatusOK, `{"status":"success"}`)
+	defer server.Close()
+
+	client := NewSubscriber("test_client", server.URL)
+
+	err := client.AcknowledgeMessage()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+}
+
+func TestReceiveMessage(t *testing.T) {
+	server := mockServer(http.StatusOK, `{"message":"Breaking news"}`)
+	defer server.Close()
+
+	client := NewSubscriber("test_client", server.URL)
+
+	// Получаем сообщение от сервера
+	message, err := client.ReceiveMessage()
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	// Парсим полученное сообщение (это JSON)
+	var respData map[string]interface{}
+	err = json.Unmarshal([]byte(message), &respData)
+	if err != nil {
+		t.Fatalf("Error parsing received message: %v", err)
+	}
+
+	// Проверяем, что значение поля "message" соответствует ожиданиям
+	expectedMessage := "Breaking news"
+	if respData["message"] != expectedMessage {
+		t.Fatalf("Expected message '%s', got '%s'", expectedMessage, respData["message"])
+	}
 }

@@ -29,6 +29,14 @@ type PublishRequest struct {
 	TTL      int64  `json:"ttl"` // TTL в секундах
 }
 
+type AcknowledgeRequest struct {
+	ClientID string `json:"client_id"`
+}
+
+type ReceiveMessageRequest struct {
+	ClientID string `json:"client_id"`
+}
+
 // CreateTopicHandler создает новый топик
 func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -110,5 +118,44 @@ func SubscribeHandler(b broker.Broker) http.HandlerFunc {
 		// Ответ, если подписка прошла успешно
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "Subscribed successfully")
+	}
+}
+
+// ReceiveMessageHandler получает сообщение для клиента
+func ReceiveMessageHandler(b broker.Broker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req ReceiveMessageRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		message, err := b.ReceiveFromTopic(req.ClientID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, message)
+	}
+}
+
+// AcknowledgeHandler подтверждает получение сообщения
+func AcknowledgeHandler(b broker.Broker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req AcknowledgeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+
+		if err := b.AcknowledgeMessage(req.ClientID); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "Message acknowledged successfully")
 	}
 }

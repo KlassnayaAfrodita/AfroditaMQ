@@ -78,7 +78,7 @@ func (s *SimpleSubscriber) Unsubscribe(topic string) error {
 
 // ReceiveMessage получает сообщение из топика для подписчика
 func (s *SimpleSubscriber) ReceiveMessage() (string, error) {
-	url := fmt.Sprintf("%s/receive", s.BaseURL)
+	url := fmt.Sprintf("%s/receive?client_id=%s", s.BaseURL, s.ClientID)
 	resp, err := http.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("failed to receive message: %v", err)
@@ -95,4 +95,30 @@ func (s *SimpleSubscriber) ReceiveMessage() (string, error) {
 	}
 
 	return string(body), nil
+}
+
+// AcknowledgeMessage подтверждает получение сообщения
+func (s *SimpleSubscriber) AcknowledgeMessage() error {
+	url := fmt.Sprintf("%s/acknowledge", s.BaseURL)
+	ackRequest := map[string]string{
+		"client_id": s.ClientID,
+	}
+
+	data, err := json.Marshal(ackRequest)
+	if err != nil {
+		return fmt.Errorf("failed to marshal acknowledge request: %v", err)
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return fmt.Errorf("failed to send acknowledge request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to acknowledge message, status code: %d", resp.StatusCode)
+	}
+
+	fmt.Printf("Client %s acknowledged the message\n", s.ClientID)
+	return nil
 }

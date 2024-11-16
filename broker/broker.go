@@ -57,10 +57,8 @@ type SimpleBroker struct {
 	topics         map[string][]*Message
 	clients        map[string][]string
 	messageHeap    MinHeap
-	publishChan    chan Message
 	mu             sync.RWMutex
 	unacknowledged map[string]*Message
-	stopChan       chan struct{}
 }
 
 // NewBroker создает новый брокер
@@ -69,12 +67,9 @@ func NewBroker() *SimpleBroker {
 		topics:         make(map[string][]*Message),
 		clients:        make(map[string][]string),
 		messageHeap:    MinHeap{},
-		publishChan:    make(chan Message, 100),
 		unacknowledged: make(map[string]*Message),
-		stopChan:       make(chan struct{}),
 	}
 	heap.Init(&b.messageHeap)
-	go b.handlePublications()
 	go b.CleanUpExpiredMessages()
 	return b
 }
@@ -136,49 +131,45 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 		Topic:      topic,
 	}
 	b.topics[topic] = append(b.topics[topic], msg)
+
 	heap.Push(&b.messageHeap, msg)
 	return nil
 }
 
-// AsyncPublish отправляет сообщение через канал
-func (b *SimpleBroker) AsyncPublish(topic string, message Message) {
-	b.publishChan <- message
-}
-
-// handlePublications обрабатывает публикации
-func (b *SimpleBroker) handlePublications() {
-	for {
-		select {
-		case msg := <-b.publishChan:
-			_ = b.Publish(msg.Topic, msg)
-		case <-b.stopChan:
-			return
-		}
-	}
-}
-
 // ReceiveFromTopic получает сообщение для клиента
 func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	if _, hasUnack := b.unacknowledged[clientID]; hasUnack {
+	b.mu.RLock()
+	if _, exists := b.unacknowledged[clientID]; exists {
+		b.mu.RUnlock()
 		return "", fmt.Errorf("client %s has an unacknowledged message", clientID)
 	}
 
-	topics := b.clients[clientID]
+	topics, subscribed := b.clients[clientID]
+	if !subscribed {
+		b.mu.RUnlock()
+		return "", fmt.Errorf("client %s not subscribed to any topic", clientID)
+	}
+
+	// Поиск сообщений по подпискам
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
 			msg := messages[0]
+			b.mu.RUnlock() // Снимаем чтение-захват, перед обновлением берем полный Lock
+
+			b.mu.Lock()
 			b.topics[topic] = messages[1:]
 			b.unacknowledged[clientID] = msg
+			b.mu.Unlock()
+
 			return msg.Content, nil
 		}
 	}
+
+	b.mu.RUnlock()
 	return "", fmt.Errorf("no messages for client %s", clientID)
 }
 
-// AcknowledgeMessage подтверждает получение сообщения
+// AcknowledgeMessage подтверждает получение сообщения клиентом
 func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -191,40 +182,32 @@ func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 	return fmt.Errorf("no unacknowledged message for client %s", clientID)
 }
 
-// startCleanUpWorker запускает очистку
+// CleanUpExpiredMessages запускает фоновую очистку истекших сообщений
 func (b *SimpleBroker) CleanUpExpiredMessages() {
 	for {
-		select {
-		case <-time.After(100 * time.Millisecond):
-			b.mu.Lock()
-			now := time.Now()
-			for b.messageHeap.Len() > 0 {
-				msg := b.messageHeap[0]
-				if msg.Expiration.After(now) {
-					break
-				}
-				heap.Pop(&b.messageHeap)
-				b.removeMessageFromTopic(msg)
+		time.Sleep(100 * time.Millisecond)
+		b.mu.Lock()
+		now := time.Now()
+		for b.messageHeap.Len() > 0 {
+			msg := b.messageHeap[0]
+			if msg.Expiration.After(now) {
+				break
 			}
-			b.mu.Unlock()
-		case <-b.stopChan:
-			return
+			heap.Pop(&b.messageHeap)
+			b.removeMessageFromTopic(msg)
 		}
+		b.mu.Unlock()
 	}
 }
 
 // removeMessageFromTopic удаляет сообщение из топика
 func (b *SimpleBroker) removeMessageFromTopic(msg *Message) {
-	messages := b.topics[msg.Topic]
-	for i, m := range messages {
-		if m == msg {
-			b.topics[msg.Topic] = append(messages[:i], messages[i+1:]...)
-			return
+	if messages, exists := b.topics[msg.Topic]; exists {
+		for i, m := range messages {
+			if m == msg {
+				b.topics[msg.Topic] = append(messages[:i], messages[i+1:]...)
+				return
+			}
 		}
 	}
-}
-
-// Stop завершает работу брокера
-func (b *SimpleBroker) Stop() {
-	close(b.stopChan)
 }

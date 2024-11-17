@@ -9,7 +9,7 @@ AfroditaMQ is a high-performance, asynchronous message broker designed for scala
 
 ## Features
 
-- **High Performance**: Capable of handling over 1,000,000 RPCs per second in optimal environments.
+- **High Performance**: Capable of handling over 1,000,000 RPCs.
 - **Asynchronous Operations**: Fully asynchronous and designed for concurrency.
 - **Topic-based Messaging**: Create, delete, and manage multiple topics.
 - **Message Prioritization**: Automatically prioritize messages based on expiration time.

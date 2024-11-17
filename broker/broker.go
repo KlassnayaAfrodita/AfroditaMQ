@@ -247,7 +247,19 @@ func (b *Broker) CleanUpExpiredMessages() {
 				if msg.Expiration.After(now) {
 					break
 				}
+				// Удаляем из MinHeap
 				heap.Pop(&b.messageHeap)
+
+				// Удаляем из соответствующего топика
+				if messages, exists := b.topics[msg.Topic]; exists {
+					filtered := []*Message{}
+					for _, m := range messages {
+						if m != msg {
+							filtered = append(filtered, m)
+						}
+					}
+					b.topics[msg.Topic] = filtered
+				}
 			}
 			b.mu.Unlock()
 		case <-b.stopCleanup:

@@ -12,12 +12,14 @@ func main() {
 	b := broker.NewBroker()
 
 	// Настройка маршрутов
-	http.HandleFunc("/create_topic", handlers.CreateTopicHandler(b))
-	http.HandleFunc("/subscribe", handlers.SubscribeHandler(b))
-	http.HandleFunc("/unsubscribe", handlers.UnsubscribeHandler(b))
-	http.HandleFunc("/publish", handlers.PublishHandler(b))
-	http.HandleFunc("/receive", handlers.ReceiveMessageHandler(b))
-	http.HandleFunc("/acknowledge", handlers.AcknowledgeHandler(b))
+	http.HandleFunc("/create_topic", handlers.CreateTopicHandler(b))   // Создание топика
+	http.HandleFunc("/subscribe", handlers.SubscribeHandler(b))        // Подписка на топик
+	http.HandleFunc("/unsubscribe", handlers.UnsubscribeHandler(b))    // Отписка от топика
+	http.HandleFunc("/publish", handlers.PublishHandler(b))            // Публикация сообщения
+	http.HandleFunc("/publish_batch", handlers.PublishBatchHandler(b)) // Пакетная публикация сообщений
+	http.HandleFunc("/receive", handlers.ReceiveMessageHandler(b))     // Получение сообщения для клиента
+	http.HandleFunc("/receive_batch", handlers.ReceiveBatchHandler(b)) // Получение пакета сообщений для клиента
+	http.HandleFunc("/acknowledge", handlers.AcknowledgeHandler(b))    // Подтверждение получения сообщения
 
 	// Запуск сервера
 	address := ":8080"

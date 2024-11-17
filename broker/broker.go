@@ -127,6 +127,34 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 	return nil
 }
 
+func (b *SimpleBroker) PublishBatch(topic string, messages []Message) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Проверяем, существует ли топик
+	if _, exists := b.topics[topic]; !exists {
+		return fmt.Errorf("topic %s does not exist", topic)
+	}
+
+	// Обрабатываем каждое сообщение
+	for _, message := range messages {
+		msg := &Message{
+			Content:    message.Content,
+			Priority:   message.Priority,
+			Expiration: message.Expiration,
+			Topic:      topic,
+		}
+
+		// Добавляем сообщение в топик
+		b.topics[topic] = append(b.topics[topic], msg)
+
+		// Добавляем сообщение в MinHeap
+		heap.Push(&b.messageHeap, msg)
+	}
+
+	return nil
+}
+
 // ReceiveFromTopic получает сообщение для клиента
 func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 	b.mu.RLock()
@@ -170,6 +198,39 @@ func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 		return nil
 	}
 	return fmt.Errorf("no unacknowledged message for client %s", clientID)
+}
+
+// ReceiveBatchFromTopic получает пакет сообщений для клиента из заданного топика
+func (b *SimpleBroker) ReceiveBatchFromTopic(clientID, topic string, batchSize int) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if _, exists := b.clients[clientID]; !exists {
+		return nil, fmt.Errorf("client %s not subscribed to any topics", clientID)
+	}
+
+	messages, exists := b.topics[topic]
+	if !exists {
+		return nil, fmt.Errorf("topic %s does not exist", topic)
+	}
+
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("no messages in topic %s", topic)
+	}
+
+	if batchSize > len(messages) {
+		batchSize = len(messages)
+	}
+
+	batch := messages[:batchSize]
+	var result []string
+	for _, msg := range batch {
+		result = append(result, msg.Content)
+	}
+
+	// Удаляем переданные сообщения из очереди
+	b.topics[topic] = messages[batchSize:]
+	return result, nil
 }
 
 // CleanUpExpiredMessages запускает фоновую очистку истекших сообщений

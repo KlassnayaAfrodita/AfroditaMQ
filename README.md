@@ -1,6 +1,6 @@
-<div style="text-align: center;">
-  <img src="logo.png" alt="Логотип AfroditaMQ" style="width: 100%; height: 30%;">
-</div>
+<p align="center">
+  <img src="logo.png" alt="Логотип AfroditaMQ" width="300">
+</p>
 
 # Message Broker
 

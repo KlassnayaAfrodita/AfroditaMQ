@@ -1,34 +1,24 @@
 
   <img src="logo.png" alt="Логотип AfroditaMQ" width="300">
 
-# Message Broker
+# AfroditaMQ: High-Performance Asynchronous Message Broker
 
-Проект предоставляет простой API для работы с брокером сообщений и тестируемый клиентский интерфейс для взаимодействия с ним.
+AfroditaMQ is a high-performance, asynchronous message broker designed for scalable and reliable message delivery. This broker supports efficient topic-based pub-sub messaging with features like message prioritization, expiration, batch operations, and more.
 
-## Преимущества
+---
 
-- **Простота использования**: API брокера и клиента легко интегрировать в существующие проекты.
-- **Поддержка приоритетов и TTL сообщений**: Сообщения могут быть отправлены с приоритетом и временем жизни.
-- **Модульность**: Брокер разделён на несколько компонентов, что облегчает поддержку и расширение.
+## Features
 
-## Описание
+- **High Performance**: Capable of handling over 1,000,000 RPCs per second in optimal environments.
+- **Asynchronous Operations**: Fully asynchronous and designed for concurrency.
+- **Topic-based Messaging**: Create, delete, and manage multiple topics.
+- **Message Prioritization**: Automatically prioritize messages based on expiration time.
+- **Batch Processing**: Publish and receive messages in batches for better throughput.
+- **Message Expiration**: Automatically removes expired messages to save resources.
+- **Client Acknowledgments**: Ensures reliable delivery via client acknowledgment.
+- **Scalable Design**: Utilizes lightweight Go routines and sync primitives for high scalability.
 
-Проект состоит из двух основных частей:
+---
+## Contributing
+Feel free to open issues and submit pull requests to improve AfroditaMQ.
 
-1. **Брокер сообщений**: Сервис, который управляет топиками, подписками и сообщениями.
-2. **Клиент**: Интерфейс для отправки сообщений на брокер и подписки на топики.
-
-### Важные компоненты:
-
-- **Broker**: Управляет топиками и подписчиками, а также получает и отправляет сообщения.
-- **Publisher**: Публикует сообщения на сервер.
-- **Subscriber**: Подписывается на топики и получает сообщения.
-
-## Как запустить
-
-### 1. Запуск брокера:
-
-Для запуска брокера, просто выполните команду:
-
-```bash
-go run MessageBroker/main.go

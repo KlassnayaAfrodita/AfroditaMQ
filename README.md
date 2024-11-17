@@ -1,4 +1,4 @@
-<img src="https://drive.google.com/file/d/15DP-cC2b0fMYIkUeCdQFVUaRbkbPAEC6/view" width="300" alt="Logo">
+![Логотип AfroditaMQ](logo.png)
 
 # Message Broker
 

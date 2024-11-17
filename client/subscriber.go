@@ -8,22 +8,22 @@ import (
 	"net/http"
 )
 
-// SimpleSubscriber реализует интерфейс Subscriber
-type SimpleSubscriber struct {
+// ClientSubscriber реализует интерфейс Subscriber
+type ClientSubscriber struct {
 	ClientID string
 	BaseURL  string
 }
 
-// NewSubscriber создает новый экземпляр SimpleSubscriber
-func NewSubscriber(clientID string, baseURL string) *SimpleSubscriber {
-	return &SimpleSubscriber{
+// NewSubscriber создает новый экземпляр ClientSubscriber
+func NewClientSubscriber(clientID string, baseURL string) *ClientSubscriber {
+	return &ClientSubscriber{
 		ClientID: clientID,
 		BaseURL:  baseURL,
 	}
 }
 
 // Subscribe подписывает клиента на указанный топик
-func (s *SimpleSubscriber) Subscribe(topic string) error {
+func (s *ClientSubscriber) Subscribe(topic string) error {
 	url := fmt.Sprintf("%s/subscribe", s.BaseURL)
 	subscribeRequest := map[string]string{
 		"client_id": s.ClientID,
@@ -50,7 +50,7 @@ func (s *SimpleSubscriber) Subscribe(topic string) error {
 }
 
 // Unsubscribe отписывает клиента от указанного топика
-func (s *SimpleSubscriber) Unsubscribe(topic string) error {
+func (s *ClientSubscriber) Unsubscribe(topic string) error {
 	url := fmt.Sprintf("%s/unsubscribe", s.BaseURL)
 	unsubscribeRequest := map[string]string{
 		"client_id": s.ClientID,
@@ -76,8 +76,8 @@ func (s *SimpleSubscriber) Unsubscribe(topic string) error {
 	return nil
 }
 
-// ReceiveMessage получает сообщение из топика для подписчика
-func (s *SimpleSubscriber) ReceiveMessage() (string, error) {
+// ReceiveMessage получает сообщение из топика
+func (s *ClientSubscriber) ReceiveMessage() (string, error) {
 	url := fmt.Sprintf("%s/receive?client_id=%s", s.BaseURL, s.ClientID)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -97,8 +97,40 @@ func (s *SimpleSubscriber) ReceiveMessage() (string, error) {
 	return string(body), nil
 }
 
+// ReceiveBatchFromTopic получает пакет сообщений
+func (s *ClientSubscriber) ReceiveBatchFromTopic(topic string, batchSize int) ([]string, error) {
+	url := fmt.Sprintf("%s/receive_batch", s.BaseURL)
+	batchRequest := map[string]interface{}{
+		"client_id":  s.ClientID,
+		"topic":      topic,
+		"batch_size": batchSize,
+	}
+
+	data, err := json.Marshal(batchRequest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal batch request: %v", err)
+	}
+
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(data))
+	if err != nil {
+		return nil, fmt.Errorf("failed to send batch request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to receive batch, status code: %d", resp.StatusCode)
+	}
+
+	var messages []string
+	if err := json.NewDecoder(resp.Body).Decode(&messages); err != nil {
+		return nil, fmt.Errorf("failed to decode batch response: %v", err)
+	}
+
+	return messages, nil
+}
+
 // AcknowledgeMessage подтверждает получение сообщения
-func (s *SimpleSubscriber) AcknowledgeMessage() error {
+func (s *ClientSubscriber) AcknowledgeMessage() error {
 	url := fmt.Sprintf("%s/acknowledge", s.BaseURL)
 	ackRequest := map[string]string{
 		"client_id": s.ClientID,

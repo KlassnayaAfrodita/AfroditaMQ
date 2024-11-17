@@ -103,3 +103,91 @@ func BenchmarkCleanUpExpiredMessages(b *testing.B) {
 		broker.CleanUpExpiredMessages()
 	}
 }
+
+// Бенчмарк для пакетного получения сообщений размером 10
+func BenchmarkReceiveBatchFromTopicSize100(b *testing.B) {
+	broker := NewBroker()
+	defer broker.Close()
+
+	broker.CreateTopic("news")
+	broker.Subscribe("client1", "news")
+
+	// Публикуем 10 сообщений
+	for i := 0; i < 100; i++ {
+		broker.Publish("news", Message{Content: "Message", Expiration: time.Now().Add(1 * time.Minute)})
+	}
+
+	for i := 0; i < b.N; i++ {
+		broker.ReceiveBatchFromTopic("client1", "news", 10)
+	}
+}
+
+// Бенчмарк для пакетного получения сообщений размером 100
+func BenchmarkReceiveBatchFromTopicSize1000(b *testing.B) {
+	broker := NewBroker()
+	defer broker.Close()
+
+	broker.CreateTopic("news")
+	broker.Subscribe("client1", "news")
+
+	// Публикуем 100 сообщений
+	for i := 0; i < 1000; i++ {
+		broker.Publish("news", Message{Content: "Message", Expiration: time.Now().Add(1 * time.Minute)})
+	}
+
+	for i := 0; i < b.N; i++ {
+		broker.ReceiveBatchFromTopic("client1", "news", 100)
+	}
+}
+
+func BenchmarkPublishBatch(b *testing.B) {
+	broker := NewBroker()
+	defer broker.Close()
+
+	// Создаем топик
+	broker.CreateTopic("benchmark_topic")
+
+	// Создаем пакет сообщений
+	messages := make([]Message, 1000)
+	for i := 0; i < 1000; i++ {
+		messages[i] = Message{
+			Content:    "Message",
+			Priority:   i,
+			Expiration: time.Now().Add(time.Duration(i) * time.Second),
+		}
+	}
+
+	// Сброс счетчиков времени
+	b.ResetTimer()
+
+	// Выполняем публикацию в бенчмарке
+	for i := 0; i < b.N; i++ {
+		broker.PublishBatch("benchmark_topic", messages)
+	}
+}
+
+func BenchmarkPublishBatchSmall(b *testing.B) {
+	broker := NewBroker()
+	defer broker.Close()
+
+	// Создаем топик
+	broker.CreateTopic("small_benchmark_topic")
+
+	// Создаем небольшой пакет сообщений
+	messages := make([]Message, 10)
+	for i := 0; i < 10; i++ {
+		messages[i] = Message{
+			Content:    "Message",
+			Priority:   i,
+			Expiration: time.Now().Add(time.Duration(i) * time.Second),
+		}
+	}
+
+	// Сброс счетчиков времени
+	b.ResetTimer()
+
+	// Выполняем публикацию в бенчмарке
+	for i := 0; i < b.N; i++ {
+		broker.PublishBatch("small_benchmark_topic", messages)
+	}
+}

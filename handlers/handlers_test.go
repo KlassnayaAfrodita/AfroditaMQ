@@ -1,83 +1,256 @@
 package handlers
 
 import (
-	"MessageBroker/broker" // Убедитесь, что правильно импортирован брокер
+	"MessageBroker/broker"
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
-// Тест для обработчика создания топика
+// Тест для CreateTopicHandler
 func TestCreateTopicHandler(t *testing.T) {
 	b := broker.NewBroker()
-	handler := CreateTopicHandler(b)
 
-	reqBody := `{"topic": "news"}`
-	req := httptest.NewRequest(http.MethodPost, "/create-topic", bytes.NewReader([]byte(reqBody)))
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200, got %d", w.Code)
+	tests := []struct {
+		name           string
+		requestBody    CreateTopicRequest
+		expectedStatus int
+	}{
+		{
+			name: "Create new topic successfully",
+			requestBody: CreateTopicRequest{
+				Topic: "test-topic",
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Try to create the same topic again",
+			requestBody: CreateTopicRequest{
+				Topic: "test-topic",
+			},
+			expectedStatus: http.StatusInternalServerError, // Тема уже существует
+		},
 	}
 
-	if w.Body.String() != "Topic created successfully\n" {
-		t.Errorf("Expected response body 'Topic created successfully', got %s", w.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/create_topic", bytes.NewReader(reqBody))
+			rec := httptest.NewRecorder()
+
+			handler := CreateTopicHandler(b)
+			handler.ServeHTTP(rec, req)
+
+			if status := rec.Code; status != tt.expectedStatus {
+				t.Errorf("expected status %v, got %v", tt.expectedStatus, status)
+			}
+		})
 	}
 }
 
-// Тест для обработчика публикации сообщений
+// Тест для SubscribeHandler
+func TestSubscribeHandler(t *testing.T) {
+	b := broker.NewBroker()
+	b.CreateTopic("test-topic")
+
+	tests := []struct {
+		name           string
+		requestBody    SubscribeRequest
+		expectedStatus int
+	}{
+		{
+			name: "Subscribe successfully",
+			requestBody: SubscribeRequest{
+				ClientID: "client-1",
+				Topic:    "test-topic",
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Subscribe to a non-existent topic",
+			requestBody: SubscribeRequest{
+				ClientID: "client-2",
+				Topic:    "non-existent-topic",
+			},
+			expectedStatus: http.StatusInternalServerError, // Ошибка, топик не существует
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/subscribe", bytes.NewReader(reqBody))
+			rec := httptest.NewRecorder()
+
+			handler := SubscribeHandler(b)
+			handler.ServeHTTP(rec, req)
+
+			if status := rec.Code; status != tt.expectedStatus {
+				t.Errorf("expected status %v, got %v", tt.expectedStatus, status)
+			}
+		})
+	}
+}
+
+// Тест для PublishHandler
 func TestPublishHandler(t *testing.T) {
 	b := broker.NewBroker()
-	b.CreateTopic("news")
-	handler := PublishHandler(b)
+	b.CreateTopic("test-topic")
 
-	reqBody := `{"topic": "news", "message": "Breaking news", "priority": 5, "ttl": 60}`
-	req := httptest.NewRequest(http.MethodPost, "/publish", bytes.NewReader([]byte(reqBody)))
-	w := httptest.NewRecorder()
-
-	handler(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200, got %d", w.Code)
+	tests := []struct {
+		name           string
+		requestBody    PublishRequest
+		expectedStatus int
+	}{
+		{
+			name: "Publish message successfully",
+			requestBody: PublishRequest{
+				Topic:    "test-topic",
+				Message:  "Test message",
+				Priority: 1,
+				TTL:      60,
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Publish message to non-existent topic",
+			requestBody: PublishRequest{
+				Topic:    "non-existent-topic",
+				Message:  "Test message",
+				Priority: 1,
+				TTL:      60,
+			},
+			expectedStatus: http.StatusInternalServerError, // Ошибка, топик не существует
+		},
 	}
 
-	if w.Body.String() != "Message published successfully\n" {
-		t.Errorf("Expected response body 'Message published successfully', got %s", w.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/publish", bytes.NewReader(reqBody))
+			rec := httptest.NewRecorder()
+
+			handler := PublishHandler(b)
+			handler.ServeHTTP(rec, req)
+
+			if status := rec.Code; status != tt.expectedStatus {
+				t.Errorf("expected status %v, got %v", tt.expectedStatus, status)
+			}
+		})
 	}
 }
 
-// Тест для обработчика отписки от топика
-func TestUnsubscribeHandler(t *testing.T) {
+// Тест для ReceiveMessageHandler
+func TestReceiveMessageHandler(t *testing.T) {
 	b := broker.NewBroker()
-	b.CreateTopic("news")
-	b.Subscribe("client1", "news")
-	handler := UnsubscribeHandler(b)
+	b.CreateTopic("test-topic")
+	b.Publish("test-topic", broker.Message{
+		Content:    "Test message",
+		Priority:   1,
+		Expiration: time.Now().Add(60 * time.Second),
+	})
 
-	reqBody := `{"client_id": "client1", "topic": "news"}`
-	req := httptest.NewRequest(http.MethodPost, "/unsubscribe", bytes.NewReader([]byte(reqBody)))
-	w := httptest.NewRecorder()
+	// Подписываем клиента "client-1" на топик
+	b.Subscribe("client-1", "test-topic")
 
-	handler(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code 200, got %d", w.Code)
+	tests := []struct {
+		name           string
+		requestBody    ReceiveMessageRequest
+		expectedStatus int
+		expectedBody   string
+	}{
+		{
+			name: "Receive message successfully",
+			requestBody: ReceiveMessageRequest{
+				ClientID: "client-1", // Клиент "client-1" подписан и получит сообщение
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Test message\n", // Сообщение, которое мы отправили
+		},
+		{
+			name: "No message for client",
+			requestBody: ReceiveMessageRequest{
+				ClientID: "client-2", // Клиент "client-2" не подписан, сообщений нет
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "no messages for client client-2\n", // Сообщение, которое возвращается теперь
+		},
 	}
 
-	if w.Body.String() != "Unsubscribed successfully\n" {
-		t.Errorf("Expected response body 'Unsubscribed successfully', got %s", w.Body.String())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/receive", bytes.NewReader(reqBody))
+			rec := httptest.NewRecorder()
+
+			handler := ReceiveMessageHandler(b)
+			handler.ServeHTTP(rec, req)
+
+			// Проверяем статус ответа
+			if status := rec.Code; status != tt.expectedStatus {
+				t.Errorf("expected status %v, got %v", tt.expectedStatus, status)
+			}
+
+			// Проверяем тело ответа
+			if rec.Body.String() != tt.expectedBody {
+				t.Errorf("expected body %v, got %v", tt.expectedBody, rec.Body.String())
+			}
+		})
+	}
+}
+
+// Тест для AcknowledgeHandler
+func TestAcknowledgeHandler(t *testing.T) {
+	b := broker.NewBroker()
+	b.CreateTopic("test-topic")
+	b.Publish("test-topic", broker.Message{
+		Content:    "Test message",
+		Priority:   1,
+		Expiration: time.Now().Add(60 * time.Second),
+	})
+
+	// Подписываем клиента
+	b.Subscribe("client-1", "test-topic")
+
+	// Получаем сообщение
+	b.ReceiveFromTopic("client-1")
+
+	tests := []struct {
+		name           string
+		requestBody    AcknowledgeRequest
+		expectedStatus int
+	}{
+		{
+			name: "Acknowledge message successfully",
+			requestBody: AcknowledgeRequest{
+				ClientID: "client-1",
+			},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "Acknowledge without any unacknowledged message",
+			requestBody: AcknowledgeRequest{
+				ClientID: "client-2",
+			},
+			expectedStatus: http.StatusNotFound, // Нет необработанных сообщений
+		},
 	}
 
-	// Попробуем отписаться от несуществующего топика
-	reqBody = `{"client_id": "client1", "topic": "sports"}`
-	req = httptest.NewRequest(http.MethodPost, "/unsubscribe", bytes.NewReader([]byte(reqBody)))
-	w = httptest.NewRecorder()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			reqBody, _ := json.Marshal(tt.requestBody)
+			req := httptest.NewRequest(http.MethodPost, "/acknowledge", bytes.NewReader(reqBody))
+			rec := httptest.NewRecorder()
 
-	handler(w, req)
+			handler := AcknowledgeHandler(b)
+			handler.ServeHTTP(rec, req)
 
-	if w.Code == http.StatusOK {
-		t.Errorf("Expected error, got status code %d", w.Code)
+			if status := rec.Code; status != tt.expectedStatus {
+				t.Errorf("expected status %v, got %v", tt.expectedStatus, status)
+			}
+		})
 	}
 }

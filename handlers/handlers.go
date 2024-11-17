@@ -38,7 +38,7 @@ type ReceiveMessageRequest struct {
 }
 
 // CreateTopicHandler создает новый топик
-func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
+func CreateTopicHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req CreateTopicRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -57,7 +57,7 @@ func CreateTopicHandler(b broker.Broker) http.HandlerFunc {
 }
 
 // UnsubscribeHandler отписывает клиента от топика
-func UnsubscribeHandler(b broker.Broker) http.HandlerFunc {
+func UnsubscribeHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req UnsubscribeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -76,7 +76,7 @@ func UnsubscribeHandler(b broker.Broker) http.HandlerFunc {
 }
 
 // PublishHandler публикует сообщение с приоритетом и TTL
-func PublishHandler(b broker.Broker) http.HandlerFunc {
+func PublishHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req PublishRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -101,7 +101,7 @@ func PublishHandler(b broker.Broker) http.HandlerFunc {
 	}
 }
 
-func SubscribeHandler(b broker.Broker) http.HandlerFunc {
+func SubscribeHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req SubscribeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -122,7 +122,7 @@ func SubscribeHandler(b broker.Broker) http.HandlerFunc {
 }
 
 // ReceiveMessageHandler получает сообщение для клиента
-func ReceiveMessageHandler(b broker.Broker) http.HandlerFunc {
+func ReceiveMessageHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req ReceiveMessageRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -142,7 +142,7 @@ func ReceiveMessageHandler(b broker.Broker) http.HandlerFunc {
 }
 
 // AcknowledgeHandler подтверждает получение сообщения
-func AcknowledgeHandler(b broker.Broker) http.HandlerFunc {
+func AcknowledgeHandler(b *broker.Broker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req AcknowledgeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

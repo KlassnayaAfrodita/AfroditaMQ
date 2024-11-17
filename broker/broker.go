@@ -268,6 +268,11 @@ func (b *Broker) CleanUpExpiredMessages() {
 	}
 }
 
+func (b *Broker) TopicExists(topic string) bool {
+	_, exists := b.topics[topic]
+	return exists
+}
+
 // Close останавливает брокер и завершает фоновые задачи
 func (b *Broker) Close() {
 	close(b.stopCleanup)

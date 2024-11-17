@@ -41,17 +41,6 @@ func (h *MinHeap) Pop() interface{} {
 	return item
 }
 
-type Broker interface {
-	Publish(topic string, message Message) error
-	Subscribe(clientID string, topic string) error
-	Unsubscribe(clientID string, topic string) error
-	CreateTopic(topic string) error
-	DeleteTopic(topic string) error
-	ReceiveFromTopic(clientID string) (string, error)
-	CleanUpExpiredMessages()
-	AcknowledgeMessage(clientID string) error
-}
-
 // SimpleBroker реализует интерфейс брокера
 type SimpleBroker struct {
 	topics         map[string][]*Message
@@ -59,6 +48,7 @@ type SimpleBroker struct {
 	messageHeap    MinHeap
 	mu             sync.RWMutex
 	unacknowledged map[string]*Message
+	stopCleanup    chan struct{}
 }
 
 // NewBroker создает новый брокер
@@ -68,6 +58,7 @@ func NewBroker() *SimpleBroker {
 		clients:        make(map[string][]string),
 		messageHeap:    MinHeap{},
 		unacknowledged: make(map[string]*Message),
+		stopCleanup:    make(chan struct{}),
 	}
 	heap.Init(&b.messageHeap)
 	go b.CleanUpExpiredMessages()
@@ -94,7 +85,7 @@ func (b *SimpleBroker) DeleteTopic(topic string) error {
 }
 
 // Subscribe подписывает клиента на топик
-func (b *SimpleBroker) Subscribe(clientID string, topic string) error {
+func (b *SimpleBroker) Subscribe(clientID, topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.clients[clientID] = append(b.clients[clientID], topic)
@@ -102,7 +93,7 @@ func (b *SimpleBroker) Subscribe(clientID string, topic string) error {
 }
 
 // Unsubscribe отписывает клиента от топика
-func (b *SimpleBroker) Unsubscribe(clientID string, topic string) error {
+func (b *SimpleBroker) Unsubscribe(clientID, topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	topics := b.clients[clientID]
@@ -150,11 +141,10 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 		return "", fmt.Errorf("client %s not subscribed to any topic", clientID)
 	}
 
-	// Поиск сообщений по подпискам
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
 			msg := messages[0]
-			b.mu.RUnlock() // Снимаем чтение-захват, перед обновлением берем полный Lock
+			b.mu.RUnlock()
 
 			b.mu.Lock()
 			b.topics[topic] = messages[1:]
@@ -184,30 +174,28 @@ func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 
 // CleanUpExpiredMessages запускает фоновую очистку истекших сообщений
 func (b *SimpleBroker) CleanUpExpiredMessages() {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 	for {
-		time.Sleep(100 * time.Millisecond)
-		b.mu.Lock()
-		now := time.Now()
-		for b.messageHeap.Len() > 0 {
-			msg := b.messageHeap[0]
-			if msg.Expiration.After(now) {
-				break
+		select {
+		case <-ticker.C:
+			b.mu.Lock()
+			now := time.Now()
+			for b.messageHeap.Len() > 0 {
+				msg := b.messageHeap[0]
+				if msg.Expiration.After(now) {
+					break
+				}
+				heap.Pop(&b.messageHeap)
 			}
-			heap.Pop(&b.messageHeap)
-			b.removeMessageFromTopic(msg)
+			b.mu.Unlock()
+		case <-b.stopCleanup:
+			return
 		}
-		b.mu.Unlock()
 	}
 }
 
-// removeMessageFromTopic удаляет сообщение из топика
-func (b *SimpleBroker) removeMessageFromTopic(msg *Message) {
-	if messages, exists := b.topics[msg.Topic]; exists {
-		for i, m := range messages {
-			if m == msg {
-				b.topics[msg.Topic] = append(messages[:i], messages[i+1:]...)
-				return
-			}
-		}
-	}
+// Close останавливает брокер и завершает фоновые задачи
+func (b *SimpleBroker) Close() {
+	close(b.stopCleanup)
 }

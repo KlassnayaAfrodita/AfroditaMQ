@@ -1,6 +1,6 @@
-<center>
-  ![Logo AfroditaMQ](logo.png)
-</center>
+<p align="center">
+  <img src="logo.png" alt="Логотип AfroditaMQ" width="300">
+</p>
 
 # Message Broker
 

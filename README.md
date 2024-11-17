@@ -1,4 +1,4 @@
-<img src="https://drive.google.com/file/d/15DP-cC2b0fMYIkUeCdQFVUaRbkbPAEC6" width="300" alt="Logo">
+<img src="https://drive.google.com/file/d/15DP-cC2b0fMYIkUeCdQFVUaRbkbPAEC6/view?usp=sharing" width="300" alt="Logo">
 
 # Message Broker
 

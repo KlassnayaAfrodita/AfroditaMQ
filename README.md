@@ -1,4 +1,6 @@
-![Логотип AfroditaMQ](logo.png)
+<center>
+  ![Logo AfroditaMQ](logo.png)
+</center>
 
 # Message Broker
 

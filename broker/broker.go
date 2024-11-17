@@ -41,8 +41,8 @@ func (h *MinHeap) Pop() interface{} {
 	return item
 }
 
-// SimpleBroker реализует интерфейс брокера
-type SimpleBroker struct {
+// Broker реализует интерфейс брокера
+type Broker struct {
 	topics         map[string][]*Message
 	clients        map[string][]string
 	messageHeap    MinHeap
@@ -52,8 +52,8 @@ type SimpleBroker struct {
 }
 
 // NewBroker создает новый брокер
-func NewBroker() *SimpleBroker {
-	b := &SimpleBroker{
+func NewBroker() *Broker {
+	b := &Broker{
 		topics:         make(map[string][]*Message),
 		clients:        make(map[string][]string),
 		messageHeap:    MinHeap{},
@@ -66,7 +66,7 @@ func NewBroker() *SimpleBroker {
 }
 
 // CreateTopic создает новый топик
-func (b *SimpleBroker) CreateTopic(topic string) error {
+func (b *Broker) CreateTopic(topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if _, exists := b.topics[topic]; exists {
@@ -77,7 +77,7 @@ func (b *SimpleBroker) CreateTopic(topic string) error {
 }
 
 // DeleteTopic удаляет топик
-func (b *SimpleBroker) DeleteTopic(topic string) error {
+func (b *Broker) DeleteTopic(topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	delete(b.topics, topic)
@@ -85,7 +85,7 @@ func (b *SimpleBroker) DeleteTopic(topic string) error {
 }
 
 // Subscribe подписывает клиента на топик
-func (b *SimpleBroker) Subscribe(clientID, topic string) error {
+func (b *Broker) Subscribe(clientID, topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.clients[clientID] = append(b.clients[clientID], topic)
@@ -93,7 +93,7 @@ func (b *SimpleBroker) Subscribe(clientID, topic string) error {
 }
 
 // Unsubscribe отписывает клиента от топика
-func (b *SimpleBroker) Unsubscribe(clientID, topic string) error {
+func (b *Broker) Unsubscribe(clientID, topic string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	topics := b.clients[clientID]
@@ -107,7 +107,7 @@ func (b *SimpleBroker) Unsubscribe(clientID, topic string) error {
 }
 
 // Publish публикует сообщение в топик
-func (b *SimpleBroker) Publish(topic string, message Message) error {
+func (b *Broker) Publish(topic string, message Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -127,7 +127,7 @@ func (b *SimpleBroker) Publish(topic string, message Message) error {
 	return nil
 }
 
-func (b *SimpleBroker) PublishBatch(topic string, messages []Message) error {
+func (b *Broker) PublishBatch(topic string, messages []Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -156,7 +156,7 @@ func (b *SimpleBroker) PublishBatch(topic string, messages []Message) error {
 }
 
 // ReceiveFromTopic получает сообщение для клиента
-func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
+func (b *Broker) ReceiveFromTopic(clientID string) (string, error) {
 	b.mu.RLock()
 	if _, exists := b.unacknowledged[clientID]; exists {
 		b.mu.RUnlock()
@@ -188,7 +188,7 @@ func (b *SimpleBroker) ReceiveFromTopic(clientID string) (string, error) {
 }
 
 // AcknowledgeMessage подтверждает получение сообщения клиентом
-func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
+func (b *Broker) AcknowledgeMessage(clientID string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -201,7 +201,7 @@ func (b *SimpleBroker) AcknowledgeMessage(clientID string) error {
 }
 
 // ReceiveBatchFromTopic получает пакет сообщений для клиента из заданного топика
-func (b *SimpleBroker) ReceiveBatchFromTopic(clientID, topic string, batchSize int) ([]string, error) {
+func (b *Broker) ReceiveBatchFromTopic(clientID, topic string, batchSize int) ([]string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -234,7 +234,7 @@ func (b *SimpleBroker) ReceiveBatchFromTopic(clientID, topic string, batchSize i
 }
 
 // CleanUpExpiredMessages запускает фоновую очистку истекших сообщений
-func (b *SimpleBroker) CleanUpExpiredMessages() {
+func (b *Broker) CleanUpExpiredMessages() {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -257,6 +257,6 @@ func (b *SimpleBroker) CleanUpExpiredMessages() {
 }
 
 // Close останавливает брокер и завершает фоновые задачи
-func (b *SimpleBroker) Close() {
+func (b *Broker) Close() {
 	close(b.stopCleanup)
 }

@@ -103,7 +103,7 @@ func TestPublishSuccess(t *testing.T) {
 	defer server.Close()
 
 	// Создаём Publisher
-	publisher := NewPublisher("client1", server.URL)
+	publisher := NewClientPublisher("client1", server.URL)
 
 	// Публикуем сообщение
 	err := publisher.Publish("news", "Breaking news", 5, 60)
@@ -119,7 +119,7 @@ func TestPublishError(t *testing.T) {
 	defer server.Close()
 
 	// Создаём Publisher
-	publisher := NewPublisher("client1", server.URL)
+	publisher := NewClientPublisher("client1", server.URL)
 
 	// Публикуем сообщение
 	err := publisher.Publish("news", "Breaking news", 5, 60)
@@ -141,7 +141,7 @@ func TestPublishInvalidRequest(t *testing.T) {
 	defer server.Close()
 
 	// Создаём Publisher
-	publisher := NewPublisher("client1", server.URL)
+	publisher := NewClientPublisher("client1", server.URL)
 
 	// Публикуем сообщение с неправильными параметрами
 	// Например, пустое сообщение
@@ -164,7 +164,7 @@ func TestPublishMessageWithTTL(t *testing.T) {
 	defer server.Close()
 
 	// Создаем Publisher
-	publisher := NewPublisher("client1", server.URL)
+	publisher := NewClientPublisher("client1", server.URL)
 
 	ttl := int64(2) // 2 секунды TTL
 	topic := "news"
@@ -185,7 +185,7 @@ func TestReceiveMessageBeforeTTLExpires(t *testing.T) {
 	clientID := "client1"
 	baseURL := server.URL
 
-	subscriber := NewSubscriber(clientID, baseURL)
+	subscriber := NewClientSubscriber(clientID, baseURL)
 
 	ttl := int64(2) // 2 секунды TTL
 	topic := "news"
@@ -196,7 +196,7 @@ func TestReceiveMessageBeforeTTLExpires(t *testing.T) {
 	assert.Nil(t, err, "Ошибка при подписке на топик")
 
 	// Публикуем сообщение
-	publisher := NewPublisher(clientID, baseURL)
+	publisher := NewClientPublisher(clientID, baseURL)
 	err = publisher.Publish(topic, message, 1, ttl)
 	assert.Nil(t, err, "Ошибка при публикации сообщения")
 
@@ -222,6 +222,7 @@ func TestReceiveMessageBeforeTTLExpires(t *testing.T) {
 func TestReceiveMessageAfterTTLExpires(t *testing.T) {
 	// Создаем брокер
 	b := broker.NewBroker()
+	defer b.Close()
 
 	// Создаем топик
 	topic := "news"
@@ -244,8 +245,11 @@ func TestReceiveMessageAfterTTLExpires(t *testing.T) {
 	err = b.Subscribe(clientID, topic)
 	assert.Nil(t, err, "Ошибка при подписке на топик")
 
-	// Ожидаем 2 секунды, чтобы TTL сообщения истек
+	// Ждём завершения времени TTL и удаления сообщения из брокера
 	time.Sleep(2 * time.Second)
+
+	// Повторно проверяем очистку истёкших сообщений
+	time.Sleep(500 * time.Millisecond) // Даем немного времени на выполнение CleanUpExpiredMessages
 
 	// Пытаемся получить сообщение после истечения TTL
 	respMessage, err := b.ReceiveFromTopic(clientID)
@@ -259,7 +263,7 @@ func TestAcknowledgeMessage(t *testing.T) {
 	server := mockServer(http.StatusOK, `{"status":"success"}`)
 	defer server.Close()
 
-	client := NewSubscriber("test_client", server.URL)
+	client := NewClientSubscriber("test_client", server.URL)
 
 	err := client.AcknowledgeMessage()
 	if err != nil {
@@ -271,7 +275,7 @@ func TestReceiveMessage(t *testing.T) {
 	server := mockServer(http.StatusOK, `{"message":"Breaking news"}`)
 	defer server.Close()
 
-	client := NewSubscriber("test_client", server.URL)
+	client := NewClientSubscriber("test_client", server.URL)
 
 	// Получаем сообщение от сервера
 	message, err := client.ReceiveMessage()

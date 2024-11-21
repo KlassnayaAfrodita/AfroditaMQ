@@ -112,7 +112,7 @@ func BenchmarkReceiveBatchFromTopicSize100(b *testing.B) {
 	broker.CreateTopic("news")
 	broker.Subscribe("client1", "news")
 
-	// Публикуем 10 сообщений
+	// Публикуем 100 сообщений
 	for i := 0; i < 100; i++ {
 		broker.Publish("news", Message{Content: "Message", Expiration: time.Now().Add(1 * time.Minute)})
 	}
@@ -122,7 +122,7 @@ func BenchmarkReceiveBatchFromTopicSize100(b *testing.B) {
 	}
 }
 
-// Бенчмарк для пакетного получения сообщений размером 100
+// Бенчмарк для пакетного получения сообщений размером 1000
 func BenchmarkReceiveBatchFromTopicSize1000(b *testing.B) {
 	broker := NewBroker()
 	defer broker.Close()

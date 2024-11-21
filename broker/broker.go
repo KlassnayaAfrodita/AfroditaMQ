@@ -43,22 +43,31 @@ func (h *MinHeap) Pop() interface{} {
 
 // Broker реализует интерфейс брокера
 type Broker struct {
-	topics         map[string][]*Message
-	clients        map[string][]string
-	messageHeap    MinHeap
-	mu             sync.RWMutex
-	unacknowledged map[string]*Message
-	stopCleanup    chan struct{}
+	topics               map[string][]*Message
+	clients              map[string][]string
+	messageHeap          MinHeap
+	mu                   sync.RWMutex
+	unacknowledged       map[string]*Message
+	acknowledgmentTimers map[string]*time.Timer
+	ackTimeout           time.Duration
+	stopCleanup          chan struct{}
 }
 
 // NewBroker создает новый брокер
-func NewBroker() *Broker {
+func NewBroker(ackTimeout ...time.Duration) *Broker {
+	timeout := 10 * time.Second // Значение по умолчанию
+	if len(ackTimeout) > 0 {
+		timeout = ackTimeout[0]
+	}
+
 	b := &Broker{
-		topics:         make(map[string][]*Message),
-		clients:        make(map[string][]string),
-		messageHeap:    MinHeap{},
-		unacknowledged: make(map[string]*Message),
-		stopCleanup:    make(chan struct{}),
+		topics:               make(map[string][]*Message),
+		clients:              make(map[string][]string),
+		messageHeap:          MinHeap{},
+		unacknowledged:       make(map[string]*Message),
+		acknowledgmentTimers: make(map[string]*time.Timer),
+		ackTimeout:           timeout,
+		stopCleanup:          make(chan struct{}),
 	}
 	heap.Init(&b.messageHeap)
 	go b.CleanUpExpiredMessages()
@@ -127,16 +136,15 @@ func (b *Broker) Publish(topic string, message Message) error {
 	return nil
 }
 
+// PublishBatch публикует пакет сообщений в топик
 func (b *Broker) PublishBatch(topic string, messages []Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	// Проверяем, существует ли топик
 	if _, exists := b.topics[topic]; !exists {
 		return fmt.Errorf("topic %s does not exist", topic)
 	}
 
-	// Обрабатываем каждое сообщение
 	for _, message := range messages {
 		msg := &Message{
 			Content:    message.Content,
@@ -144,46 +152,50 @@ func (b *Broker) PublishBatch(topic string, messages []Message) error {
 			Expiration: message.Expiration,
 			Topic:      topic,
 		}
-
-		// Добавляем сообщение в топик
 		b.topics[topic] = append(b.topics[topic], msg)
-
-		// Добавляем сообщение в MinHeap
 		heap.Push(&b.messageHeap, msg)
 	}
-
 	return nil
 }
 
 // ReceiveFromTopic получает сообщение для клиента
 func (b *Broker) ReceiveFromTopic(clientID string) (string, error) {
-	b.mu.RLock()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
 	if _, exists := b.unacknowledged[clientID]; exists {
-		b.mu.RUnlock()
 		return "", fmt.Errorf("client %s has an unacknowledged message", clientID)
 	}
 
 	topics, subscribed := b.clients[clientID]
 	if !subscribed {
-		b.mu.RUnlock()
 		return "", fmt.Errorf("client %s not subscribed to any topic", clientID)
 	}
 
 	for _, topic := range topics {
 		if messages, exists := b.topics[topic]; exists && len(messages) > 0 {
 			msg := messages[0]
-			b.mu.RUnlock()
-
-			b.mu.Lock()
 			b.topics[topic] = messages[1:]
 			b.unacknowledged[clientID] = msg
-			b.mu.Unlock()
+
+			// Установить таймер для ожидания подтверждения
+			b.acknowledgmentTimers[clientID] = time.AfterFunc(b.ackTimeout, func() {
+				b.mu.Lock()
+				defer b.mu.Unlock()
+
+				if unackMsg, stillPending := b.unacknowledged[clientID]; stillPending && unackMsg == msg {
+					// Возвращаем сообщение обратно в топик
+					b.topics[topic] = append(b.topics[topic], msg)
+					delete(b.unacknowledged, clientID)
+					delete(b.acknowledgmentTimers, clientID)
+					fmt.Printf("Message '%s' retransmitted to topic '%s' due to timeout\n", msg.Content, topic)
+				}
+			})
 
 			return msg.Content, nil
 		}
 	}
 
-	b.mu.RUnlock()
 	return "", fmt.Errorf("no messages for client %s", clientID)
 }
 
@@ -194,13 +206,20 @@ func (b *Broker) AcknowledgeMessage(clientID string) error {
 
 	if msg, exists := b.unacknowledged[clientID]; exists {
 		delete(b.unacknowledged, clientID)
+
+		// Остановить таймер подтверждения
+		if timer, timerExists := b.acknowledgmentTimers[clientID]; timerExists {
+			timer.Stop()
+			delete(b.acknowledgmentTimers, clientID)
+		}
+
 		fmt.Printf("Message '%s' acknowledged by client '%s'\n", msg.Content, clientID)
 		return nil
 	}
 	return fmt.Errorf("no unacknowledged message for client %s", clientID)
 }
 
-// ReceiveBatchFromTopic получает пакет сообщений для клиента из заданного топика
+// ReceiveBatchFromTopic получает пакет сообщений для клиента
 func (b *Broker) ReceiveBatchFromTopic(clientID, topic string, batchSize int) ([]string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -228,7 +247,6 @@ func (b *Broker) ReceiveBatchFromTopic(clientID, topic string, batchSize int) ([
 		result = append(result, msg.Content)
 	}
 
-	// Удаляем переданные сообщения из очереди
 	b.topics[topic] = messages[batchSize:]
 	return result, nil
 }
@@ -247,10 +265,8 @@ func (b *Broker) CleanUpExpiredMessages() {
 				if msg.Expiration.After(now) {
 					break
 				}
-				// Удаляем из MinHeap
 				heap.Pop(&b.messageHeap)
 
-				// Удаляем из соответствующего топика
 				if messages, exists := b.topics[msg.Topic]; exists {
 					filtered := []*Message{}
 					for _, m := range messages {
@@ -266,11 +282,6 @@ func (b *Broker) CleanUpExpiredMessages() {
 			return
 		}
 	}
-}
-
-func (b *Broker) TopicExists(topic string) bool {
-	_, exists := b.topics[topic]
-	return exists
 }
 
 // Close останавливает брокер и завершает фоновые задачи
